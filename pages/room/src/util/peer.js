@@ -6,7 +6,17 @@ class PeerBuilder {
         this.onCallReceived = defaultFunctionValue
         this.onConnectionOpened = defaultFunctionValue
         this.onPeerStreamReceived = defaultFunctionValue
+        this.onCallError = defaultFunctionValue
+        this.onCallClose = defaultFunctionValue
+    }
 
+    setOnCallError(fn) {
+        this.onCallError = fn
+        return this
+    }
+    setOnCallClose(fn) {
+        this.onCallClose = fn
+        return this
     }
 
     setOnError(fn) {
@@ -28,13 +38,33 @@ class PeerBuilder {
         return this
     }
 
+    //adicionar o comportanmento dos eventos de call também para quem ligar!
+    _preparePeerInstanceFunction(peerModule) {
+        class PeerCustomModule extends peerModule { }
+
+        const peerCall = PeerCustomModule.prototype.call
+        const context = this
+        PeerCustomModule.prototype.call = function (id, stream) {
+            const call = peerCall.apply(this, [id, stream])
+            //Aqui acontece a magia, interceptamos o call e adicionamos todos os eventos
+            //da chamada para quem liga também
+            context._prepareCaallEvent(call)
+
+            return call
+        }
+        return PeerCustomModule
+    }
     _prepareCaallEvent(call) {
         call.on('stream', stream => this.onPeerStreamReceived(call, stream))
+        call.on('error', error => this.onCallError(call, error))
+        call.on('close', _ => this.onCallClose(call))
         this.onCallReceived(call)
     }
     build() {
 
-        const peer = new Peer(...this.peerConfig)
+        //const peer = new Peer(...this.peerConfig)
+        const PeerCustomModule = this._preparePeerInstanceFunction(Peer)
+        const peer = new PeerCustomModule(...this.peerConfig)
 
         peer.on("error", this.onError)
         peer.on("call", this._prepareCaallEvent.bind(this))
